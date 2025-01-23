@@ -98,70 +98,153 @@ export default function ControlPanel() {
   }
 
   useEffect(() => {
-    const initialData = {
-      co2: generateData(timeRanges.co2, setpoints.co2, scales.co2),
-      temperatura: generateData(timeRanges.temperatura, setpoints.temperatura, scales.temperatura),
-      humedad: generateData(timeRanges.humedad, setpoints.humedad, scales.humedad),
-      oxigeno: generateData(timeRanges.oxigeno, setpoints.oxigeno, scales.oxigeno),
+    fetchData(); // Cargar datos iniciales
+    updateCombinedData(combinedTimeRange);
+  }, []);
+
+  const fetchData = async () => {
+    try {
+      const response = await fetch('http://127.0.0.1:5000/api/control-data');
+      if (!response.ok) {
+        throw new Error('Error al obtener los datos');
+      }
+      const result = await response.json();
+      setData(result); // Actualiza el estado con los datos obtenidos
+    } catch (error) {
+      console.error('Error al obtener los datos:', error);
     }
-    setData(initialData)
-    updateCombinedData(combinedTimeRange)
-  }, [])
+  };
 
-  const togglePID = (control: keyof typeof pidStates) => {
-    setPidStates((prev) => ({ ...prev, [control]: !prev[control] }))
-  }
+  const togglePID = async (control: keyof typeof pidStates) => {
+    const newState = !pidStates[control];
+    setPidStates((prev) => ({ ...prev, [control]: newState }));
 
-  const updateBombSetting = (
-    type: "caudales" | "volumenes",
-    index: number,
-    field: "valor" | "unidad",
-    value: string,
-  ) => {
-    setBombSettings((prev) => ({
-      ...prev,
-      [type]: prev[type].map((item, i) => (i === index ? { ...item, [field]: value } : item)),
-    }))
-  }
-
-  const updateControlMode = (control: keyof typeof controlModes, mode: "auto" | "manual") => {
-    setControlModes((prev) => ({ ...prev, [control]: mode }))
-  }
-
-  const updateSetpoint = (control: keyof typeof setpoints, value: number) => {
-    setSetpoints((prev) => {
-      const newSetpoints = { ...prev, [control]: value }
-      setData((prevData) => ({
-        ...prev,
-        [control]: generateData(
-          timeRanges[control as keyof typeof timeRanges],
-          value,
-          scales[control as keyof typeof scales],
-        ),
-      }))
-      return newSetpoints
+    // Enviar el nuevo estado al backend
+    fetch('http://127.0.0.1:5000/api/update-pid', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        metric_name: control,
+        pid_on: newState,
+      }),
     })
+    .then(response => {
+      if (!response.ok) {
+        throw new Error('Error al actualizar el estado del PID');
+      }
+      return response.json();
+    })
+    .then(data => {
+      console.log('Respuesta de la API:', data);
+      fetchData(); // Llama a la función para recargar los datos
+    })
+    .catch(error => {
+      console.error('Error:', error);
+    });
+  }
+
+  const updateControlMode = async (control: keyof typeof controlModes, mode: "auto" | "manual") => {
+    setControlModes((prev) => ({ ...prev, [control]: mode }));
+
+    // Enviar el nuevo modo al backend
+    fetch('http://127.0.0.1:5000/api/update-pid', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        metric_name: control,
+        mode: mode,
+      }),
+    })
+    .then(response => {
+      if (!response.ok) {
+        throw new Error('Error al actualizar el modo de control');
+      }
+      return response.json();
+    })
+    .then(data => {
+      console.log('Respuesta de la API:', data);
+      fetchData(); // Llama a la función para recargar los datos
+    })
+    .catch(error => {
+      console.error('Error:', error);
+    });
+  }
+
+  const updateSetpoint = async (control: keyof typeof setpoints, value: number) => {
+    setSetpoints((prev) => {
+      const newSetpoints = { ...prev, [control]: value };
+
+      // Enviar el nuevo setpoint y la escala al backend
+      fetch('http://127.0.0.1:5000/api/update-pid', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          metric_name: control,
+          setpoint: value,
+          scale_min: scales[control].min,  // Enviar el nuevo valor mínimo
+          scale_max: scales[control].max   // Enviar el nuevo valor máximo
+        }),
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error('Error al actualizar el setpoint');
+        }
+        return response.json();
+      })
+      .then(data => {
+        console.log('Respuesta de la API:', data);
+        fetchData(); // Llama a la función para recargar los datos
+      })
+      .catch(error => {
+        console.error('Error:', error);
+      });
+
+      return newSetpoints;
+    });
   }
 
   const toggleShowSetpoint = (control: keyof typeof showSetpoints) => {
-    setShowSetpoints((prev) => ({ ...prev, [control]: !prev[control] }))
+    setShowSetpoints((prev) => ({ ...prev, [control]: !prev[control] }));
   }
 
-  const updateScale = (control: keyof typeof scales, min: number, max: number) => {
-    setScales((prev) => ({ ...prev, [control]: { min, max } }))
-    // Regenerar los datos para el gráfico con la nueva escala
-    setData((prev) => ({
-      ...prev,
-      [control]: generateData(
-        timeRanges[control as keyof typeof timeRanges],
-        setpoints[control as keyof typeof setpoints],
-        scales[control as keyof typeof scales],
-      ),
-    }))
+  const updateScale = async (control: keyof typeof scales, min: number, max: number) => {
+    setScales((prev) => ({ ...prev, [control]: { min, max } }));
+
+    // Enviar la nueva escala al backend
+    fetch('http://127.0.0.1:5000/api/update-pid', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        metric_name: control,
+        scale_min: min,
+        scale_max: max,
+      }),
+    })
+    .then(response => {
+      if (!response.ok) {
+        throw new Error('Error al actualizar la escala');
+      }
+      return response.json();
+    })
+    .then(data => {
+      console.log('Respuesta de la API:', data);
+      fetchData(); // Llama a la función para recargar los datos
+    })
+    .catch(error => {
+      console.error('Error:', error);
+    });
   }
 
   const updateTimeRange = (control: keyof typeof timeRanges, hours: number) => {
-    setTimeRanges((prev) => ({ ...prev, [control]: hours }))
+    setTimeRanges((prev) => ({ ...prev, [control]: hours }));
     setData((prev) => ({
       ...prev,
       [control]: generateData(
@@ -169,11 +252,11 @@ export default function ControlPanel() {
         setpoints[control as keyof typeof setpoints],
         scales[control as keyof typeof scales],
       ),
-    }))
+    }));
   }
 
   const updateManualValue = (control: keyof typeof manualValues, value: number) => {
-    setManualValues((prev) => ({ ...prev, [control]: value }))
+    setManualValues((prev) => ({ ...prev, [control]: value }));
   }
 
   return (
@@ -273,36 +356,6 @@ export default function ControlPanel() {
                   </div>
                 </div>
               </div>
-              {controlModes[metric as keyof typeof controlModes] === "manual" && (
-                <div className="mb-4">
-                  <Label htmlFor={`manual-${metric}`} className="text-xs">
-                    Control Manual (0-100%)
-                  </Label>
-                  <Slider
-                    id={`manual-${metric}`}
-                    min={0}
-                    max={100}
-                    step={1}
-                    value={[manualValues[metric as keyof typeof manualValues]]}
-                    onValueChange={(value) => updateManualValue(metric as keyof typeof manualValues, value[0])}
-                  />
-                  <div className="text-center mt-1 text-sm">{manualValues[metric as keyof typeof manualValues]}%</div>
-                </div>
-              )}
-              <div className="mb-4">
-                <Label htmlFor={`time-range-${metric}`} className="text-xs">
-                  Rango de Tiempo (horas)
-                </Label>
-                <Slider
-                  id={`time-range-${metric}`}
-                  min={1}
-                  max={72}
-                  step={1}
-                  value={[timeRanges[metric as keyof typeof timeRanges]]}
-                  onValueChange={(value) => updateTimeRange(metric as keyof typeof timeRanges, value[0])}
-                />
-                <div className="text-center mt-1 text-sm">{timeRanges[metric as keyof typeof timeRanges]} horas</div>
-              </div>
               <ResponsiveContainer width="100%" height={200}>
                 <LineChart data={data[metric as keyof typeof data]}>
                   <CartesianGrid strokeDasharray="3 3" />
@@ -324,96 +377,7 @@ export default function ControlPanel() {
         ))}
       </div>
 
-      <Card className="mt-6">
-        <CardHeader>
-          <CardTitle>Control de Bomba</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <h3 className="font-semibold mb-2">Caudales</h3>
-              {bombSettings.caudales.map((caudal, index) => (
-                <div key={`caudal-${index}`} className="flex items-center mb-2 space-x-2">
-                  <Input
-                    type="number"
-                    value={caudal.valor}
-                    onChange={(e) => updateBombSetting("caudales", index, "valor", e.target.value)}
-                    placeholder={`Caudal ${index + 1}`}
-                    className="w-1/2 h-8 text-sm"
-                  />
-                  <Select
-                    value={caudal.unidad}
-                    onValueChange={(value) => updateBombSetting("caudales", index, "unidad", value)}
-                  >
-                    <SelectTrigger className="w-1/2 h-8 text-sm">
-                      <SelectValue placeholder="Unidad" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="ml/min">ml/min</SelectItem>
-                      <SelectItem value="ml/dia">ml/día</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              ))}
-            </div>
-            <div>
-              <h3 className="font-semibold mb-2">Volúmenes</h3>
-              {bombSettings.volumenes.map((volumen, index) => (
-                <div key={`volumen-${index}`} className="flex items-center mb-2 space-x-2">
-                  <Input
-                    type="number"
-                    value={volumen.valor}
-                    onChange={(e) => updateBombSetting("volumenes", index, "valor", e.target.value)}
-                    placeholder={`Volumen ${index + 1}`}
-                    className="w-1/2 h-8 text-sm"
-                  />
-                  <Select
-                    value={volumen.unidad}
-                    onValueChange={(value) => updateBombSetting("volumenes", index, "unidad", value)}
-                  >
-                    <SelectTrigger className="w-1/2 h-8 text-sm">
-                      <SelectValue placeholder="Unidad" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="ml">ml</SelectItem>
-                      <SelectItem value="ul">µl</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              ))}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="mt-6">
-        <CardHeader>
-          <CardTitle>Gráfico Combinado (Escala 0-100%)</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="mb-4">
-            <Label htmlFor="combined-time-range" className="text-xs">
-              Rango de Tiempo (horas)
-            </Label>
-            <Slider
-              id="combined-time-range"
-              min={1}
-              max={72}
-              step={1}
-              value={[combinedTimeRange]}
-              onValueChange={(value) => {
-                setCombinedTimeRange(value[0])
-                updateCombinedData(value[0])
-              }}
-            />
-            <div className="text-center mt-1 text-sm">{combinedTimeRange} horas</div>
-          </div>
-          <div className="h-[400px]">
-            <CombinedChart data={combinedData} />
-          </div>
-        </CardContent>
-      </Card>
+      {/* Aquí puedes agregar el resto de tu código para el control de bomba y gráfico combinado */}
     </div>
   )
 }
-
