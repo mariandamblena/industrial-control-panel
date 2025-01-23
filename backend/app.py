@@ -1,4 +1,4 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, render_template_string
 from flask_cors import CORS
 
 app = Flask(__name__)
@@ -55,7 +55,26 @@ data_to_send = {
 
 @app.route('/')
 def home():
-    return "Bienvenido a la API de Control"
+    return render_template_string('''
+        <!doctype html>
+        <html lang="es">
+        <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+            <title>Bienvenido</title>
+            <style>
+                body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; }
+                button { padding: 10px 20px; font-size: 16px; }
+            </style>
+        </head>
+        <body>
+            <h1>Bienvenido a la API de Control</h1>
+            <a href="/api/control-data">
+                <button>Ir a Control de Datos</button>
+            </a>
+        </body>
+        </html>
+    ''')
 
 @app.route('/api/control-data')
 def get_control_data():
