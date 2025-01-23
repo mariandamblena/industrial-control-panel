@@ -1,80 +1,68 @@
-import json
 from flask import Flask, jsonify, request
+from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 
 app = Flask(__name__)
 CORS(app)
 
-# Cargar datos desde el archivo JSON
-def load_pid_controls():
-    with open('pid_controls.json', 'r') as f:
-        data = json.load(f)
-        return [PIDControl(**control) for control in data['pid_controls']]
+# Configuración de la base de datos
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///pid_controls.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db = SQLAlchemy(app)
 
-# Guardar datos en el archivo JSON
-def save_pid_controls():
-    with open('pid_controls.json', 'w') as f:
-        json.dump({"pid_controls": [control.to_dict() for control in pid_controls]}, f)
+# Modelo de la base de datos
+class PIDControl(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    metric_name = db.Column(db.String(50), nullable=False)
+    setpoint = db.Column(db.Float, nullable=False)
+    scale_min = db.Column(db.Float, nullable=False)
+    scale_max = db.Column(db.Float, nullable=False)
+    mode = db.Column(db.String(10), default='auto')
+    pid_on = db.Column(db.Boolean, default=False)
 
-# Clases y datos iniciales
-class PIDControl:
-    def __init__(self, metric_name, setpoint, scale_min, scale_max, mode="auto", pid_on=False):
-        self.metric_name = metric_name
-        self.setpoint = setpoint
-        self.scale_min = scale_min
-        self.scale_max = scale_max
-        self.mode = mode
-        self.pid_on = pid_on
+# Crear la base de datos y cargar datos iniciales
+def initialize_data():
+    if PIDControl.query.count() == 0:  # Solo insertar si la tabla está vacía
+        initial_data = [
+            PIDControl(metric_name='co2', setpoint=400, scale_min=300, scale_max=500),
+            PIDControl(metric_name='temperatura', setpoint=22, scale_min=15, scale_max=30),
+            PIDControl(metric_name='humedad', setpoint=50, scale_min=30, scale_max=70),
+            PIDControl(metric_name='oxigeno', setpoint=21, scale_min=18, scale_max=23)
+        ]
+        db.session.bulk_save_objects(initial_data)
+        db.session.commit()
 
-    def to_dict(self):
-        return {
-            "metric_name": self.metric_name,
-            "setpoint": self.setpoint,
-            "scale": {"min": self.scale_min, "max": self.scale_max},
-            "mode": self.mode,
-            "pid_on": self.pid_on
-        }
-
-# Cargar los controles PID desde el archivo JSON
-pid_controls = load_pid_controls()
+with app.app_context():
+    db.create_all()  # Crear las tablas
+    initialize_data()  # Cargar datos iniciales
 
 @app.route('/api/control-data', methods=['GET'])
 def get_control_data():
-    return jsonify([control.to_dict() for control in pid_controls])
+    controls = PIDControl.query.all()
+    return jsonify([{
+        'metric_name': control.metric_name,
+        'setpoint': control.setpoint,
+        'scale_min': control.scale_min,
+        'scale_max': control.scale_max,
+        'mode': control.mode,
+        'pid_on': control.pid_on
+    } for control in controls])
 
 @app.route('/api/update-pid', methods=['POST'])
 def update_pid():
     data = request.get_json()
     metric_name = data.get('metric_name')
-    new_setpoint = data.get('setpoint')
-    new_scale_min = data.get('scale_min')
-    new_scale_max = data.get('scale_max')
-    new_mode = data.get('mode')
-    new_pid_on = data.get('pid_on')
-
-    # Actualizar el setpoint, la escala, el modo y el estado del PID correspondiente
-    for control in pid_controls:
-        if control.metric_name == metric_name:
-            if new_setpoint is not None:
-                control.setpoint = new_setpoint
-            if new_scale_min is not None:
-                control.scale_min = new_scale_min
-            if new_scale_max is not None:
-                control.scale_max = new_scale_max
-            if new_mode is not None:
-                control.mode = new_mode
-            if new_pid_on is not None:
-                control.pid_on = new_pid_on
-            save_pid_controls()  # Guardar los cambios en el archivo JSON
-            break
-
-    return jsonify({
-        "message": "PID updated",
-        "new_setpoint": new_setpoint,
-        "new_scale": {"min": new_scale_min, "max": new_scale_max},
-        "new_mode": new_mode,
-        "pid_on": new_pid_on
-    })
+    control = PIDControl.query.filter_by(metric_name=metric_name).first()
+    
+    if control:
+        control.setpoint = data.get('setpoint', control.setpoint)
+        control.scale_min = data.get('scale_min', control.scale_min)
+        control.scale_max = data.get('scale_max', control.scale_max)
+        control.mode = data.get('mode', control.mode)
+        control.pid_on = data.get('pid_on', control.pid_on)
+        db.session.commit()
+        return jsonify({"message": "PID updated"}), 200
+    return jsonify({"message": "Control not found"}), 404
 
 if __name__ == '__main__':
     app.run(debug=True)
