@@ -109,3 +109,5 @@ Si deseas contribuir a este proyecto, siéntete libre de hacer un fork y enviar 
 ## Licencia
 
 Este proyecto está bajo la Licencia MIT. Consulta el archivo LICENSE para más detalles.
+
+![alt text](image.png)
